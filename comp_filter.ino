@@ -29,8 +29,6 @@ void loop() {
     IMU.readGyroscope(gx, gy, gz);
     // θg = θ0 + gx * Δt
     gyroAngle = (gyroAngle + (gx*(-1)) * dt);
-    //Serial.print (x);
-    //Serial.print(" deg/s \t Angle: ");
     Serial.print(gyroAngle);
     Serial.print(" ");
     // Serial.println(" deg");
