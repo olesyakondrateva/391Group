@@ -2,6 +2,9 @@
 //float gyroAngle = 0.0;
 unsigned long prevTime = 0;
 bool firstRun = true; 
+bool firstRunFilter = true;
+float gyroAngle;
+float filterAngle;
 
 void setup() {
   Serial.begin(9600);
@@ -21,8 +24,6 @@ void loop() {
   float ax, ay, az;
   float gx, gy, gz;
   float accAngle;
-  float gyroAngle;
-  float filterAngle;
 
   const float k =0.9;
 
@@ -50,18 +51,25 @@ void loop() {
     }
     
     else {
-      gyroAngle = (gyroAngle + (gx*(-1)) * dt); // multiplied gx by -1 to align polarity with sensor orientation
+      gyroAngle = (filterAngle + (gx*(-1)) * dt); // multiplied gx by -1 to align polarity with sensor orientation
       Serial.print(gyroAngle);
       Serial.print(" ");
       Serial.println(" deg");
     }
     
-
-
     // Complimentary Filter
-    filterAngle = k*gyroAngle + (1-k)*accAngle;
-    Serial.println(filterAngle);
-    Serial.print(" deg");
+    if (firstRunFilter){
+      filterAngle = accAngle;
+      Serial.println(filterAngle);
+      Serial.print(" deg");
+      firstRunFilter = false;
+    }
+    else{
+      filterAngle = k*gyroAngle + (1-k)*accAngle;
+      Serial.println(filterAngle);
+      Serial.print(" deg");
+    }
+    
   }
 
  delay(100); 
