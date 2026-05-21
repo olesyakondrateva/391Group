@@ -1,0 +1,80 @@
+volatile long encoderCount1 = 0;
+volatile long encoderCount2 = 0;
+
+const int encoderA1 = 7;
+const int encoderB1 = 8;
+
+const int encoderA2 = 9;
+const int encoderB2 = 10;
+
+void setup() {
+
+    Serial.begin(9600);
+
+    pinMode(encoderA1, INPUT_PULLUP);
+    pinMode(encoderB1, INPUT_PULLUP);
+
+    pinMode(encoderA2, INPUT_PULLUP);
+    pinMode(encoderB2, INPUT_PULLUP);
+
+    // Motor 1 interrupts
+    attachInterrupt(digitalPinToInterrupt(encoderA1), updateEncoder1, CHANGE);
+    attachInterrupt(digitalPinToInterrupt(encoderB1), updateEncoder1, CHANGE);
+
+    // Motor 2 interrupts
+    attachInterrupt(digitalPinToInterrupt(encoderA2), updateEncoder2, CHANGE);
+    attachInterrupt(digitalPinToInterrupt(encoderB2), updateEncoder2, CHANGE);
+}
+
+void loop() {
+
+    Serial.print("Encoder1: ");
+    Serial.print(encoderCount1);
+
+    Serial.print(" | Encoder2: ");
+    Serial.println(encoderCount2);
+
+    delay(100);
+}
+
+void updateEncoder1() {
+
+    static int lastA = 0;
+    static int lastB = 0;
+
+    int A = digitalRead(encoderA1);
+    int B = digitalRead(encoderB1);
+
+    if (A != lastA) {
+        if (A == B) encoderCount1++;
+        else encoderCount1--;
+    }
+    else {
+        if (A != B) encoderCount1++;
+        else encoderCount1--;
+    }
+
+    lastA = A;
+    lastB = B;
+}
+
+void updateEncoder2() {
+
+    static int lastA = 0;
+    static int lastB = 0;
+
+    int A = digitalRead(encoderA2);
+    int B = digitalRead(encoderB2);
+
+    if (A != lastA) {
+        if (A == B) encoderCount2++;
+        else encoderCount2--;
+    }
+    else {
+        if (A != lastA) encoderCount2++;
+        else encoderCount2--;
+    }
+
+    lastA = A;
+    lastB = B;
+}
