@@ -10,13 +10,13 @@ void setup() {
     pinMode(encoderA, INPUT_PULLUP);
     pinMode(encoderB, INPUT_PULLUP);
 
-    // Run ISR whenever channel A changes
-    attachInterrupt(digitalPinToInterrupt(encoderA), readEncoder, CHANGE);
+    // Full quadrature: interrupt on BOTH channels
+    attachInterrupt(digitalPinToInterrupt(encoderA), updateEncoder, CHANGE);
+    attachInterrupt(digitalPinToInterrupt(encoderB), updateEncoder, CHANGE);
 }
 
 void loop() {
 
-    // Continuously display count
     Serial.print("Encoder Count: ");
     Serial.println(encoderCount);
 
@@ -24,17 +24,25 @@ void loop() {
 }
 
 
-// Interrupt Service Routine
-void readEncoder() {
+// Full quadrature ISR (simple + reliable)
+void updateEncoder() {
+
+    static int lastA = 0;
+    static int lastB = 0;
 
     int A = digitalRead(encoderA);
     int B = digitalRead(encoderB);
 
-    // Determine direction
-    if (A == B) {
-        encoderCount++;
+    // Determine direction using phase relationship
+    if (A != lastA) {          // A changed
+        if (A == B) encoderCount++;
+        else encoderCount--;
     }
-    else {
-        encoderCount--;
+    else {                     // B changed
+        if (A != B) encoderCount++;
+        else encoderCount--;
     }
+
+    lastA = A;
+    lastB = B;
 }
