@@ -1,0 +1,102 @@
+/*
+ * RPM Measurement at 25% and 75% PWM - continuous loop
+ * Motor A: IN1=2, IN2=3  |  Encoder A1=7, B1=8
+ * Motor B: IN1=5, IN2=6  |  Encoder A2=9, B2=10
+ */
+
+const int A_IN1 = 2, A_IN2 = 3;
+const int B_IN1 = 5, B_IN2 = 6;
+
+const int encoderA1 = 7, encoderB1 = 8;
+const int encoderA2 = 9, encoderB2 = 10;
+
+volatile long encoderCount1 = 0;
+volatile long encoderCount2 = 0;
+
+const float CPR         = 1920.0;
+const int   STABILIZE   = 5000;  // ms to wait for steady state
+const int   COUNT_TIME  = 5000;  // ms to count encoder pulses
+
+void setup() {
+  Serial.begin(9600);
+  while (!Serial);
+
+  pinMode(A_IN1, OUTPUT); pinMode(A_IN2, OUTPUT);
+  pinMode(B_IN1, OUTPUT); pinMode(B_IN2, OUTPUT);
+  digitalWrite(A_IN2, LOW);
+  digitalWrite(B_IN2, LOW);
+
+  pinMode(encoderA1, INPUT_PULLUP); pinMode(encoderB1, INPUT_PULLUP);
+  pinMode(encoderA2, INPUT_PULLUP); pinMode(encoderB2, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(encoderA1), updateEncoder1, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(encoderB1), updateEncoder1, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(encoderA2), updateEncoder2, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(encoderB2), updateEncoder2, CHANGE);
+
+  Serial.println("Step | PWM A | RPM A | PWM B | RPM B");
+  Serial.println("--------------------------------------");
+}
+
+void loop() {
+  measureRPM(97,  91,  "25%");
+  measureRPM(202, 200, "75%");
+}
+
+void measureRPM(int pwmA, int pwmB, const char* label) {
+  // Start motors
+  analogWrite(A_IN1, pwmA);
+  analogWrite(B_IN1, pwmB);
+
+  // Wait for steady state
+  delay(STABILIZE);
+
+  // Reset counts
+  noInterrupts();
+  encoderCount1 = 0;
+  encoderCount2 = 0;
+  interrupts();
+
+  // Count for COUNT_TIME
+  delay(COUNT_TIME);
+
+  // Snapshot
+  noInterrupts();
+  long c1 = encoderCount1;
+  long c2 = encoderCount2;
+  interrupts();
+
+  // RPM = (counts / CPR) / (COUNT_TIME_s) * 60
+  float t = COUNT_TIME / 1000.0;
+  float rpmA = (abs(c1) / CPR) / t * 60.0;
+  float rpmB = (abs(c2) / CPR) / t * 60.0;
+
+  Serial.print(label);
+  Serial.print(" | "); Serial.print(pwmA);
+  Serial.print(" | ");  Serial.print(rpmA, 1);
+  Serial.print(" | "); Serial.print(pwmB);
+  Serial.print(" | ");  Serial.println(rpmB, 1);
+}
+
+void updateEncoder1() {
+  static int lastA = 0, lastB = 0;
+  int A = digitalRead(encoderA1);
+  int B = digitalRead(encoderB1);
+  if (A != lastA) {
+    if (A == B) encoderCount1++; else encoderCount1--;
+  } else {
+    if (A != B) encoderCount1++; else encoderCount1--;
+  }
+  lastA = A; lastB = B;
+}
+
+void updateEncoder2() {
+  static int lastA = 0, lastB = 0;
+  int A = digitalRead(encoderA2);
+  int B = digitalRead(encoderB2);
+  if (A != lastA) {
+    if (A == B) encoderCount2++; else encoderCount2--;
+  } else {
+    if (A != B) encoderCount2++; else encoderCount2--;
+  }
+  lastA = A; lastB = B;
+}
