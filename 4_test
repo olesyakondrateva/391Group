@@ -38,8 +38,20 @@ void setup() {
 }
 
 void loop() {
-  measureRPM(97,  91,  "25%");
-  measureRPM(202, 200, "75%");
+  measureRPM(44,  36,  "Deadband");
+  delay(3000);
+
+  measureRPM(97,91,"25%");
+  delay(3000);
+
+  measureRPM(150,146,"50%");
+  delay(3000);
+
+  measureRPM(202,200,"75%");
+  delay(3000);
+
+  measureRPM(255,255,"100%");
+  delay(3000);
 }
 
 void measureRPM(int pwmA, int pwmB, const char* label) {
@@ -66,7 +78,6 @@ void measureRPM(int pwmA, int pwmB, const char* label) {
   interrupts();
 
   // RPM = (counts / CPR) / (COUNT_TIME_s) * 60
-  float t = 5;
   float rpmA = (abs(c1) / CPR)  * 12;
   float rpmB = (abs(c2) / CPR)  * 12;
 
