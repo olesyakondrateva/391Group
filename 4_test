@@ -66,9 +66,9 @@ void measureRPM(int pwmA, int pwmB, const char* label) {
   interrupts();
 
   // RPM = (counts / CPR) / (COUNT_TIME_s) * 60
-  float t = COUNT_TIME / 1000.0;
-  float rpmA = (abs(c1) / CPR) / t * 60.0;
-  float rpmB = (abs(c2) / CPR) / t * 60.0;
+  float t = 5;
+  float rpmA = (abs(c1) / CPR)  * 12;
+  float rpmB = (abs(c2) / CPR)  * 12;
 
   Serial.print(label);
   Serial.print(" | "); Serial.print(pwmA);
