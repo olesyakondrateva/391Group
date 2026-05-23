@@ -44,20 +44,23 @@ const float CPR = 1920.0;
 // ================= IMU =================
 
 unsigned long prevIMUTime = 0;
+unsigned long prevTime = 0;
+bool firstRun = true; 
+bool firstRunFilter = true;
+float gyroAngle;
+float filterAngle;
 
-float gyroAngle = 0.0;
-float filterAngle = 0.0;
-float tiltAngle = 0.0;
 
 // ================= CONTROL =================
 
-float Kp = 8.0; //could try to increase and decrease if this does not work well
+float Kp = 255/90.0 //could try to increase and decrease if this does not work well
 
 // measured deadbands
 const int DEAD_A = 36;
 const int DEAD_B = 44;
 
 const int MAX_PWM = 255;
+
 
 // =========================================================
 // SETUP
@@ -105,7 +108,7 @@ void loop() {
   updateTilt();
 
   // -------- proportional control --------
-  int pwm = (int)(Kp * tiltAngle);
+  int pwm = (int)(Kp * filterAngle);
   pwm = constrain(pwm, -MAX_PWM, MAX_PWM);
 
   driveMotors(pwm);
@@ -131,14 +134,13 @@ void loop() {
     prevRPMTime = now;
 
     Serial.print("Angle: ");
-    Serial.print(tiltAngle);
+    Serial.print(filterAngle);
     Serial.print(" | PWM: ");
     Serial.print(pwm);
     Serial.print(" | RPM A: ");
     Serial.print(rpmA);
     Serial.print(" | RPM B: ");
     Serial.println(rpmB);
-    delay (1000);
   }
 }
 
@@ -148,27 +150,47 @@ void loop() {
 
 void updateTilt() {
 
+  
   float ax, ay, az;
   float gx, gy, gz;
+  float accAngle;
 
-  const float k = 0.9;  //can tune to 0.91, 0.95, 0.98, 0.99, etc. later
+  const float k = 0.9;
 
-  unsigned long now = micros();
-  float dt = (now - prevIMUTime) / 1000000.0;
-  prevIMUTime = now;
+  //Time difference
+  unsigned long currentTime = micros();
+  float dt = (currentTime - prevTime) / 1000000.0;
+  prevTime = currentTime;
 
-  if (IMU.accelerationAvailable() && IMU.gyroscopeAvailable()) {
-
+  if (IMU.accelerationAvailable() && IMU.gyroscopeAvailable()){
+    
+    // Accelerometer Angle 
     IMU.readAcceleration(ax, ay, az);
-    float accAngle = atan2(ay, az) * 180 / PI;
+    accAngle = atan2 (ay, az) * 180/PI; 
+    //Serial.print(accAngle);
+    //Serial.print(" deg ");
 
+    //Gyro Angle
     IMU.readGyroscope(gx, gy, gz);
+    if (firstRun){
+      gyroAngle = (accAngle + (gx*(-1)) * dt); // multiplied gx by -1 to align polarity with sensor orientation
+      firstRun = false;
+    }
+    
+    else {
+      gyroAngle = (filterAngle + (gx*(-1)) * dt); // multiplied gx by -1 to align polarity with sensor orientation
 
-    gyroAngle = filterAngle + (gx * -1) * dt; //"-1" depends on sensor orientation
-
-    filterAngle = k * gyroAngle + (1 - k) * accAngle;
-
-    tiltAngle = filterAngle;
+    }
+    
+    // Complimentary Filter
+    if (firstRunFilter){
+      filterAngle = accAngle;
+      firstRunFilter = false;
+    }
+    else{
+      filterAngle = k*gyroAngle + (1-k)*accAngle;
+    }
+    
   }
 }
 
@@ -219,28 +241,6 @@ void driveMotors(int pwm) {
   }
 }
 
-// =========================================================
-// ENCODERS (X2 SIMPLE + RELIABLE)
-// =========================================================
-
-/* x2 decoding
-void updateEncoder1() {
-
-  int A = digitalRead(encoderA1);
-  int B = digitalRead(encoderB1);
-
-  if (A == B) encoderCount1++;
-  else encoderCount1--;
-}
-
-void updateEncoder2() {
-
-  int A = digitalRead(encoderA2);
-  int B = digitalRead(encoderB2);
-
-  if (A == B) encoderCount2++;
-  else encoderCount2--;
-}*/
 
 void updateEncoder1() {
 
