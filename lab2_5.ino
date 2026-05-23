@@ -138,6 +138,7 @@ void loop() {
     Serial.print(rpmA);
     Serial.print(" | RPM B: ");
     Serial.println(rpmB);
+    delay (1000);
   }
 }
 
@@ -159,7 +160,7 @@ void updateTilt() {
   if (IMU.accelerationAvailable() && IMU.gyroscopeAvailable()) {
 
     IMU.readAcceleration(ax, ay, az);
-    float accAngle = atan2(ax, ay) * 180 / PI;
+    float accAngle = atan2(ay, az) * 180 / PI;
 
     IMU.readGyroscope(gx, gy, gz);
 
