@@ -1,0 +1,215 @@
+/*
+ * Deadband Characterization
+ * Arduino Nano 33 BLE + 2x DRV8871
+ * Motor A: D2 (IN1), D3 (IN2)
+ * Motor B: D5 (IN1), D6 (IN2)
+ */
+const int A_IN1 = 2;
+const int A_IN2 = 3;
+const int B_IN1 = 5;
+const int B_IN2 = 6;
+
+int deadbandA = -1;
+int deadbandB = -1;
+
+bool part1a = false;
+bool part1b = false;
+bool part2 = false;
+
+void driveBothMotors (int, int, int); //Function used for part 1b
+void drivePart2 (int, int);
+
+
+void setup() {
+  Serial.begin(9600);
+  while (!Serial);
+  pinMode(A_IN1, OUTPUT);
+  pinMode(A_IN2, OUTPUT);
+  pinMode(B_IN1, OUTPUT);
+  pinMode(B_IN2, OUTPUT);
+
+  // Making sure both motors are stopped
+  analogWrite(A_IN1, 0);
+  analogWrite(A_IN2, 0);
+  analogWrite(B_IN1, 0);
+  analogWrite(B_IN2, 0);
+
+  Serial.println("Type 'Part 1a' to begin deadband sweep test.");
+
+}
+
+void loop() {
+
+    if (Serial.available()) {
+    String input = Serial.readStringUntil('\n');
+    input.trim();
+
+    // part 1a
+    if ((input == "Part 1a") && !part1a){
+      Serial.println("=== Deadband Sweep ===");
+      Serial.println("Watch wheels. Send 'a' when Motor A starts, 'b' when Motor B starts.");
+      Serial.println();
+
+      for (int pwm = 0; pwm <= 255; pwm++) {
+
+      analogWrite(A_IN1, pwm);
+      analogWrite(B_IN1, pwm);
+      Serial.print("PWM: "); Serial.println(pwm);
+
+      // Determine how long to hold this PWM step
+      int holdTime;
+      if (pwm >= 30 && pwm <= 50) {
+        holdTime = 500;  // 5 seconds in deadband window
+      } else {
+        holdTime = 500;   // 0.5 seconds everywhere else
+      }
+
+      // Poll for serial input during the hold period
+      unsigned long startTime = millis();
+      while (millis() - startTime < holdTime) {
+        while (Serial.available()) {
+          char c = Serial.read();
+          if (c == 'a' && deadbandA == -1) {
+            deadbandA = pwm;
+            Serial.print(">>> Motor A deadband recorded at PWM "); Serial.println(pwm);
+          }
+          if (c == 'b' && deadbandB == -1) {
+            deadbandB = pwm;
+            Serial.print(">>> Motor B deadband recorded at PWM "); Serial.println(pwm);
+          }
+        }
+      }
+    }
+
+      // Sweep complete - stop motors
+      analogWrite(A_IN1, 0);
+      analogWrite(A_IN2, 0);
+      analogWrite(B_IN1, 0);
+      analogWrite(B_IN2, 0);
+
+      // Report results
+      Serial.println();
+      Serial.println("=== Sweep Complete ===");
+      if (deadbandA != -1) {
+        Serial.print("Motor A deadband: PWM "); Serial.println(deadbandA);
+      } else {
+        Serial.println("Motor A deadband: NOT recorded");
+    }
+      if (deadbandB != -1) {
+        Serial.print("Motor B deadband: PWM "); Serial.println(deadbandB);
+      } else {
+        Serial.println("Motor B deadband: NOT recorded");
+     }
+
+    part1a = true;
+    Serial.println();
+    Serial.println("Type 'Part 1b' to begin usable range test.");
+
+  }
+
+
+    // part 1b
+    else if ((input == "Part 1b") && !part1b) {
+
+      // fallback if deadbands weren't recorded
+      if (deadbandA == -1) deadbandA = 44;
+      if (deadbandB == -1) deadbandB = 36;
+
+      Serial.println();
+      Serial.println("=== Part 1b: Usable Range Test ===");
+
+      driveBothMotors(deadbandA, deadbandB, 25);
+      driveBothMotors(deadbandA, deadbandB, 50);
+      driveBothMotors(deadbandA, deadbandB, 75);
+      driveBothMotors(deadbandA, deadbandB, 100);
+
+      // stop motors
+      analogWrite(A_IN1, 0);
+      analogWrite(A_IN2, 0);
+      analogWrite(B_IN1, 0);
+      analogWrite(B_IN2, 0);
+     
+
+      Serial.println();
+      Serial.println("=== Part 1b Complete ===");
+      part1b = true;
+      Serial.println("Type 'Part 2' to begin directionality test.");
+  }
+    // part 2
+    else if ((input == "Part 2") && !part2){
+      Serial.println("=== Part 2: Directionality Test ===");
+
+      // fallback if deadbands weren't recorded
+      if (deadbandA == -1) deadbandA = 44;
+      if (deadbandB == -1) deadbandB = 36;
+      drivePart2 (deadbandA, deadbandB);
+
+      part2 = true;
+      Serial.println("=== Part 2 Complete ===");
+      Serial.println("=== Please Flash next File ===");
+      Serial.println(" Mr. Whiskers needs a break :)");
+  }
+
+
+  else Serial.println("Input not recognized");
+}
+  
+}
+
+void driveBothMotors (int dbA, int dbB, int percent){
+  Serial.print("=== "); Serial.print(percent); Serial.println("% Usable Range ===");
+  int pwmA = dbA + (int)((255 - dbA) * (percent / 100.0));
+  int pwmB = dbB + (int)((255 - dbB) * (percent / 100.0));
+
+  analogWrite(A_IN1, pwmA);
+  analogWrite(A_IN2, 0);
+  analogWrite(B_IN1, pwmB);
+  analogWrite(B_IN2, 0);
+
+  delay (10000);
+  return;
+}
+
+
+void drivePart2 (int dbA, int dbB){
+  int percent = 50; // Change this for PWM
+  int driveTime = 15000; // Change this for Driving Duration
+  int pwmA = dbA + (int)((255 - dbA) * (percent / 100.0));
+  int pwmB = dbB + (int)((255 - dbB) * (percent / 100.0));
+
+  Serial.println("=== Both Motors Forward ===");
+  analogWrite(A_IN1, pwmA);
+  analogWrite(A_IN2, 0);
+  analogWrite(B_IN1, pwmB);
+  analogWrite(B_IN2, 0);
+  delay(driveTime);
+
+  Serial.println("=== Both Motors Backward ===");
+  analogWrite(A_IN1, 0);
+  analogWrite(A_IN2, pwmA);
+  analogWrite(B_IN1, 0);
+  analogWrite(B_IN2, pwmB);
+  delay(driveTime); 
+
+  Serial.println("=== Left Forward <> Right Backward ===");
+  analogWrite(A_IN1, pwmA);
+  analogWrite(A_IN2, 0);
+  analogWrite(B_IN1, 0);
+  analogWrite(B_IN2, pwmB);
+  delay(driveTime); 
+
+  Serial.println("=== Left Backward <> Right Forward ===");
+  analogWrite(A_IN1, 0);
+  analogWrite(A_IN2, pwmA);
+  analogWrite(B_IN1, pwmB);
+  analogWrite(B_IN2, 0);
+  delay(driveTime); 
+
+  // stop motors
+  analogWrite(A_IN1, 0);
+  analogWrite(A_IN2, 0);
+  analogWrite(B_IN1, 0);
+  analogWrite(B_IN2, 0);
+
+  return;
+}
