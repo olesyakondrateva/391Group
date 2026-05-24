@@ -9,10 +9,13 @@ const int A_IN2 = 3;
 const int B_IN1 = 5;
 const int B_IN2 = 6;
 
-int pwmA = 0;
-int pwmB = 0;
 int deadbandA = -1;
 int deadbandB = -1;
+
+bool part1b = false;
+bool part2 = false;
+
+void driveBothMotors (int, int, int); //Function used for 1b
 
 void setup() {
   Serial.begin(9600);
@@ -21,8 +24,9 @@ void setup() {
   pinMode(A_IN2, OUTPUT);
   pinMode(B_IN1, OUTPUT);
   pinMode(B_IN2, OUTPUT);
-  digitalWrite(A_IN2, LOW);
-  digitalWrite(B_IN2, LOW);
+
+  analogWrite(A_IN2, 0);
+  analogWrite(B_IN2, 0);
 
   Serial.println("=== Deadband Sweep ===");
   Serial.println("Watch wheels. Send 'a' when Motor A starts, 'b' when Motor B starts.");
@@ -37,7 +41,7 @@ void setup() {
     // Determine how long to hold this PWM step
     int holdTime;
     if (pwm >= 30 && pwm <= 50) {
-      holdTime = 5000;  // 5 seconds in deadband window
+      holdTime = 500;  // 5 seconds in deadband window
     } else {
       holdTime = 500;   // 0.5 seconds everywhere else
     }
@@ -76,7 +80,61 @@ void setup() {
   } else {
     Serial.println("Motor B deadband: NOT recorded");
   }
+
+  Serial.println();
+  Serial.println("Type 'Part 1b' to begin usable range test.");
 }
 
 void loop() {
+
+    if (Serial.available()) {
+    String input = Serial.readStringUntil('\n');
+    input.trim();
+
+      if ((input == "Part 1b") && !part1b) {
+
+      // fallback if deadbands weren't recorded
+      if (deadbandA == -1) deadbandA = 44;
+      if (deadbandB == -1) deadbandB = 36;
+
+      Serial.println();
+      Serial.println("=== Part 1b: Usable Range Test ===");
+
+      driveBothMotors(deadbandA, deadbandB, 25);
+      driveBothMotors(deadbandA, deadbandB, 50);
+      driveBothMotors(deadbandA, deadbandB, 75);
+      driveBothMotors(deadbandA, deadbandB, 100);
+
+      // stop motors
+      analogWrite(A_IN1, 0);
+      analogWrite(B_IN1, 0);
+
+      Serial.println();
+      Serial.println("=== Part 1b Complete ===");
+      part1b = true;
+      Serial.println("Type 'Part 2' to begin directionality test.");
+  }
+
+  else if (input == "Part 2"){
+    Serial.println("Run part 2");
+
+  }
+
+  else Serial.println("Input not recognized");
+}
+  
+}
+
+void driveBothMotors (int dbA, int dbB, int percent){
+  Serial.print("=== "); Serial.print(percent); Serial.println("% Usable Range ===");
+  int pwmA = dbA + (int)((255 - dbA) * (percent / 100.0));
+  int pwmB = dbB + (int)((255 - dbB) * (percent / 100.0));
+
+  analogWrite(A_IN1, pwmA);
+  analogWrite(A_IN2, 0);
+  analogWrite(B_IN1, pwmB);
+  analogWrite(B_IN2, 0);
+
+  delay (10000);
+  return;
 }
