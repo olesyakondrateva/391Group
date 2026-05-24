@@ -1,0 +1,82 @@
+/*
+ * Deadband Characterization
+ * Arduino Nano 33 BLE + 2x DRV8871
+ * Motor A: D2 (IN1), D3 (IN2)
+ * Motor B: D5 (IN1), D6 (IN2)
+ */
+const int A_IN1 = 2;
+const int A_IN2 = 3;
+const int B_IN1 = 5;
+const int B_IN2 = 6;
+
+int pwmA = 0;
+int pwmB = 0;
+int deadbandA = -1;
+int deadbandB = -1;
+
+void setup() {
+  Serial.begin(9600);
+  while (!Serial);
+  pinMode(A_IN1, OUTPUT);
+  pinMode(A_IN2, OUTPUT);
+  pinMode(B_IN1, OUTPUT);
+  pinMode(B_IN2, OUTPUT);
+  digitalWrite(A_IN2, LOW);
+  digitalWrite(B_IN2, LOW);
+
+  Serial.println("=== Deadband Sweep ===");
+  Serial.println("Watch wheels. Send 'a' when Motor A starts, 'b' when Motor B starts.");
+  Serial.println();
+
+  for (int pwm = 0; pwm <= 255; pwm++) {
+
+    analogWrite(A_IN1, pwm);
+    analogWrite(B_IN1, pwm);
+    Serial.print("PWM: "); Serial.println(pwm);
+
+    // Determine how long to hold this PWM step
+    int holdTime;
+    if (pwm >= 30 && pwm <= 50) {
+      holdTime = 5000;  // 5 seconds in deadband window
+    } else {
+      holdTime = 500;   // 0.5 seconds everywhere else
+    }
+
+    // Poll for serial input during the hold period
+    unsigned long startTime = millis();
+    while (millis() - startTime < holdTime) {
+      while (Serial.available()) {
+        char c = Serial.read();
+        if (c == 'a' && deadbandA == -1) {
+          deadbandA = pwm;
+          Serial.print(">>> Motor A deadband recorded at PWM "); Serial.println(pwm);
+        }
+        if (c == 'b' && deadbandB == -1) {
+          deadbandB = pwm;
+          Serial.print(">>> Motor B deadband recorded at PWM "); Serial.println(pwm);
+        }
+      }
+    }
+  }
+
+  // Sweep complete - stop motors
+  analogWrite(A_IN1, 0);
+  analogWrite(B_IN1, 0);
+
+  // Report results
+  Serial.println();
+  Serial.println("=== Sweep Complete ===");
+  if (deadbandA != -1) {
+    Serial.print("Motor A deadband: PWM "); Serial.println(deadbandA);
+  } else {
+    Serial.println("Motor A deadband: NOT recorded");
+  }
+  if (deadbandB != -1) {
+    Serial.print("Motor B deadband: PWM "); Serial.println(deadbandB);
+  } else {
+    Serial.println("Motor B deadband: NOT recorded");
+  }
+}
+
+void loop() {
+}
