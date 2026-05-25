@@ -1,0 +1,100 @@
+/*
+ * Encoder Manual Test
+ * Arduino Nano 33 BLE + 2x DRV8871 (motors OFF for this test)
+ * Motor A: D2 (IN1), D3 (IN2)
+ * Motor B: D5 (IN1), D6 (IN2)
+ *
+ * Encoder inputs (CHANGE THESE if needed):
+ * Motor A encoder: D7 (A), D8 (B)
+ * Motor B encoder: D9 (A), D10 (B)
+ */
+
+// Motor driver pins 
+const int A_IN1 = 2;
+const int A_IN2 = 3;
+const int B_IN1 = 5;
+const int B_IN2 = 6;
+
+// Setting up Encoder Counts
+volatile long encoderCount1 = 0;
+volatile long encoderCount2 = 0;
+
+// ISR Setups
+static int lastA1 = 0;
+static int lastB1 = 0;
+static int lastA2 = 0;
+static int lastB2 = 0;
+
+
+const int encoderA1 = 7;
+const int encoderB1 = 8;
+
+const int encoderA2 = 9;
+const int encoderB2 = 10;
+
+void setup() {
+
+    Serial.begin(9600);
+
+    //Encoder input setup
+    pinMode(encoderA1, INPUT_PULLUP);
+    pinMode(encoderB1, INPUT_PULLUP);
+    pinMode(encoderA2, INPUT_PULLUP);
+    pinMode(encoderB2, INPUT_PULLUP);
+
+    // Motor 1 interrupts
+    attachInterrupt(digitalPinToInterrupt(encoderA1), updateEncoder1, CHANGE);
+    attachInterrupt(digitalPinToInterrupt(encoderB1), updateEncoder1, CHANGE);
+
+    // Motor 2 interrupts
+    attachInterrupt(digitalPinToInterrupt(encoderA2), updateEncoder2, CHANGE);
+    attachInterrupt(digitalPinToInterrupt(encoderB2), updateEncoder2, CHANGE);
+
+}
+
+void loop() {
+
+    Serial.print("Encoder1: ");
+    Serial.print(encoderCount1);
+
+    Serial.print(" | Encoder2: ");
+    Serial.println(encoderCount2);
+
+    delay(100);
+}
+
+void updateEncoder1() {
+    int A = digitalRead(encoderA1);
+    int B = digitalRead(encoderB1);
+
+    if (A != lastA1) { //A Triggered
+        if (A == B) encoderCount1++;
+        else encoderCount1--;
+    }
+    else { //B Triggered
+        if (A != B) encoderCount1++;
+        else encoderCount1--;
+    }
+
+    lastA1 = A;
+    lastB1 = B;
+}
+
+void updateEncoder2() {
+    int A = digitalRead(encoderA2);
+    int B = digitalRead(encoderB2);
+
+    if (A != lastA2) { //A Triggered
+        if (A == B) encoderCount2++;
+        else encoderCount2--;
+    }
+    else { //B Triggered
+        if (A != B) encoderCount2++;
+        else encoderCount2--;
+    }
+
+    lastA2 = A;
+    lastB2 = B;
+}
+
+
