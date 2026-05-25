@@ -1,0 +1,230 @@
+/*
+ * Encoder Manual Test
+ * Arduino Nano 33 BLE + 2x DRV8871 (motors OFF for this test)
+ * Motor A: D2 (IN1), D3 (IN2)
+ * Motor B: D5 (IN1), D6 (IN2)
+ *
+ * Encoder inputs (CHANGE THESE if needed):
+ * Motor A encoder: D7 (A), D8 (B)
+ * Motor B encoder: D9 (A), D10 (B)
+ */
+
+// Motor driver pins 
+const int A_IN1 = 2;
+const int A_IN2 = 3;
+const int B_IN1 = 5;
+const int B_IN2 = 6;
+
+bool part3 = false;
+bool done3 = false;
+bool part4 = false;
+bool done4 = false;
+
+// Setting up Encoder Counts
+volatile long encoderCount1 = 0;
+volatile long encoderCount2 = 0;
+
+// ISR Setups
+static int lastA1 = 0;
+static int lastB1 = 0;
+static int lastA2 = 0;
+static int lastB2 = 0;
+
+const int encoderA1 = 7;
+const int encoderB1 = 8;
+
+const int encoderA2 = 9;
+const int encoderB2 = 10;
+
+// Motor PWM Setup - Use Updated Values!
+const int pwmA25 = 91 ; 
+const int pwmB25 = 97;
+const int pwmA75 = 200;
+const int pwmB75 = 202;
+
+const int   STABILIZE   = 7000;  // ms to wait for steady state
+const int   SAMPLE_DURATION  = 8000;  // ms to count encoder pulses
+const int   SAMPLE_INTERVAL = 100; // ms to print RPM
+const float CPR = 1920.0;
+
+
+void setup() {
+
+    Serial.begin(9600);
+
+    //Encoder input setup
+    pinMode(encoderA1, INPUT_PULLUP);
+    pinMode(encoderB1, INPUT_PULLUP);
+    pinMode(encoderA2, INPUT_PULLUP);
+    pinMode(encoderB2, INPUT_PULLUP);
+
+    // Motor 1 interrupts
+    attachInterrupt(digitalPinToInterrupt(encoderA1), updateEncoder1, CHANGE);
+    attachInterrupt(digitalPinToInterrupt(encoderB1), updateEncoder1, CHANGE);
+
+    // Motor 2 interrupts
+    attachInterrupt(digitalPinToInterrupt(encoderA2), updateEncoder2, CHANGE);
+    attachInterrupt(digitalPinToInterrupt(encoderB2), updateEncoder2, CHANGE);
+
+    //Motor Off by Default
+    analogWrite(A_IN1, 0);
+    analogWrite(A_IN2, 0);
+    analogWrite(B_IN1, 0);
+    analogWrite(B_IN2, 0);
+
+    Serial.println("Type 'Part 3' to begin Encoder Manual Test. Enter 'Done 3' when complete");
+}
+
+void measureRPM (int, int);
+
+void loop() {
+
+    if (part3 && !done3){
+        Serial.print("Encoder1: ");
+        Serial.print(encoderCount1);
+        Serial.print(" | Encoder2: ");
+        Serial.println(encoderCount2);
+        delay (100);
+    }
+
+    if (part4 && !done4){
+        Serial.println ("=== RPM and Encoder Counts at 25% PWM ===");
+        measureRPM (pwmA25, pwmB25);
+
+        // Hold for 10s
+        Serial.println("=== Pausing 10s before next test ===");
+        delay (10000);
+
+        Serial.println ("=== RPM and Encoder Counts at 75% PWM ===");
+        measureRPM (pwmA75, pwmB75);
+        delay (10000);
+    }
+
+    if (Serial.available()) {
+    String input = Serial.readStringUntil('\n');
+    input.trim();
+
+    // Part 3 Lab
+    if ((input == "Part 3") && !part3){
+
+        //Reset counts
+        noInterrupts();
+        encoderCount1 = 0;
+        encoderCount2 = 0;
+        interrupts();
+        Serial.println("=== Encoder Counts Reset | Begin Manual Testing for Each Motor Now ===");
+        part3 = true;
+    }
+
+    else if ((input == "Done 3") && part3){
+            done3 = true;
+            Serial.println("Type 'Part 4' to begin Live Encoder Feedback");
+        }
+
+        // Part 4 Lab
+    else if ((input == "Part 4") && !part4){
+        Serial.println ("Part 4 Live Encoder Feedback Starting Now. Please type 'Done 4' when complete.");
+        part4 = true;
+    }
+
+    else if ((input == "Done 4") && part4){
+        done4 = true;
+      Serial.println("=== Please Flash next File ===");
+      Serial.println(" Mr. Whiskers needs a break :)");
+    }
+
+    else Serial.println("Input not recognized");
+    }
+}
+
+void updateEncoder1() {
+    int A = digitalRead(encoderA1);
+    int B = digitalRead(encoderB1);
+
+    if (A != lastA1) { //A Triggered
+        if (A == B) encoderCount1++;
+        else encoderCount1--;
+    }
+    else { //B Triggered
+        if (A != B) encoderCount1++;
+        else encoderCount1--;
+    }
+
+    lastA1 = A;
+    lastB1 = B;
+}
+
+void updateEncoder2() {
+    int A = digitalRead(encoderA2);
+    int B = digitalRead(encoderB2);
+
+    if (A != lastA2) { //A Triggered
+        if (A == B) encoderCount2++;
+        else encoderCount2--;
+    }
+    else { //B Triggered
+        if (A != B) encoderCount2++;
+        else encoderCount2--;
+    }
+
+    lastA2 = A;
+    lastB2 = B;
+}
+
+
+void measureRPM (int pwmA, int pwmB){
+    //Start Motors
+    analogWrite(A_IN1, pwmA); analogWrite(A_IN2, 0);
+    analogWrite(B_IN1, pwmB); analogWrite(B_IN2, 0);
+    Serial.println ("=== Motor Stabilizing ===");
+    delay (STABILIZE);
+
+    // Store starting counts 
+    noInterrupts();
+    long startCount1 = encoderCount1;
+    long startCount2 = encoderCount2;
+    interrupts();
+
+    long lastCount1 = startCount1;
+    long lastCount2 = startCount2;
+    unsigned long lastSampleTime = millis();
+
+    Serial.println("=== RPM A  |  RPM B ===");
+
+    unsigned long start = millis();
+    while (millis() - start < SAMPLE_DURATION) {
+        unsigned long now = millis();
+
+        if (now - lastSampleTime >= SAMPLE_INTERVAL) {
+
+        // Snapshot counts safely
+        noInterrupts();
+        long c1 = encoderCount1;
+        long c2 = encoderCount2;
+        interrupts();
+
+        // Use actual elapsed time for accurate RPM
+        unsigned long elapsed = now - lastSampleTime;
+
+        long delta1 = c1 - lastCount1;
+        long delta2 = c2 - lastCount2;
+
+        float rpm1 = (float)delta1 / CPR * (60000.0 / elapsed);
+        float rpm2 = (float)delta2 / CPR * (60000.0 / elapsed);
+
+        Serial.print("   "); Serial.print(rpm1); Serial.print ("   |");
+        Serial.print("   "); Serial.println (rpm2);
+
+        lastCount1 = c1;
+        lastCount2 = c2;
+        lastSampleTime = now;
+    }
+  }
+
+  // Stop motors
+  analogWrite(A_IN1, 0);  analogWrite(A_IN2, 0);
+  analogWrite(B_IN1, 0);  analogWrite(B_IN2, 0);
+
+}
+
+
