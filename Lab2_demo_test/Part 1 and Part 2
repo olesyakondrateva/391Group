@@ -59,7 +59,7 @@ void loop() {
       // Determine how long to hold this PWM step
       int holdTime;
       if (pwm >= 30 && pwm <= 50) {
-        holdTime = 500;  // 5 seconds in deadband window
+        holdTime = 5000;  // 5 seconds in deadband window
       } else {
         holdTime = 500;   // 0.5 seconds everywhere else
       }
