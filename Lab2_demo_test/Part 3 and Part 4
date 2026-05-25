@@ -51,6 +51,7 @@ const float CPR = 1920.0;
 void setup() {
 
     Serial.begin(9600);
+    while(!Serial);
 
     //Encoder input setup
     pinMode(encoderA1, INPUT_PULLUP);
