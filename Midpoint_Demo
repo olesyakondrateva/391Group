@@ -52,9 +52,9 @@ float filterAngle;
 
 // ================= CONTROL =================
 
-float Kp = 8.5; //could try to increase and decrease if this does not work well
-float Kd = 0; // differential constant 
-float Ki = 0; // integral constant 
+float Kp = 6; //could try to increase and decrease if this does not work well
+float Kd = 0.4; // differential constant 
+float Ki = 0.05; // integral constant 
 float prevError = 0; // for D
 float dt = 0; 
 float integral = 0; 
@@ -162,7 +162,7 @@ void updateTilt() {
 
   //Time difference
   unsigned long currentTime = micros();
-  float dt = (currentTime - prevTime) / 1000000.0;
+  dt = (currentTime - prevTime) / 1000000.0;
   prevTime = currentTime;
 
   if (IMU.accelerationAvailable() && IMU.gyroscopeAvailable()){
@@ -290,16 +290,15 @@ void updateEncoder2() {
 
 float MotorController(float error, float dt){ // takes tilt angle (error), calculates error based on type of control, outputs pwm 
   // proportional part 
-  float P = Kp * filterAngle; // or should we do int? 
+  float P = Kp * error; // or should we do int? 
   // derivative part, need current error and prevError  
-  float derror = error - prevError;
-  float D = Kd* derror; 
+  float derror = (error - prevError)/dt;
+  float D = Kd * derror; 
   prevError = error; 
   // inegral part 
-  float integral = integral + dt*error; 
+  integral = integral + dt*error; 
   float I = integral * Ki; 
   float PID = (P + I + D); // change gain later 
 
   return PID; 
 }
-
