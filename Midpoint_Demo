@@ -49,12 +49,11 @@ bool firstRunFilter = true;
 float gyroAngle;
 float filterAngle;
 
-
 // ================= CONTROL =================
 
-float Kp = 6; //could try to increase and decrease if this does not work well
-float Kd = 0.4; // differential constant 
-float Ki = 0.05; // integral constant 
+float Kp = 12; //could try to increase and decrease if this does not work well
+float Kd = 0.5; // differential constant 
+float Ki = 0.1; // integral constant 
 float prevError = 0; // for D
 float dt = 0; 
 float integral = 0; 
@@ -65,7 +64,6 @@ const int DEAD_B = 44;
 
 const int MAX_PWM = 255;
 
-
 // =========================================================
 // SETUP
 // =========================================================
@@ -73,7 +71,6 @@ const int MAX_PWM = 255;
 void setup() {
 
   Serial.begin(9600);
-  while (!Serial);
 
   pinMode(A_IN1, OUTPUT);
   pinMode(A_IN2, OUTPUT);
@@ -112,14 +109,14 @@ void loop() {
   updateTilt();
 
   // -------- PID control --------
-  int pwm = (int) MotorController(filterAngle, dt); 
+  int pwm = (int) MotorController(filterAngle, dt); //-1.56 gave balance on the red side
 
   driveMotors(pwm);
 
-  // -------- RPM every 100 milli seconds = 0.1 seconds --------
-  unsigned long now = millis();
+  // -------- RPM every 10000 micro seconds = 0.01 seconds so Frequency = 100 Hz --------
+  unsigned long now = micros();
 
-  if (now - prevRPMTime >= 100) {
+  if (now - prevRPMTime >= 10000) {
 
     noInterrupts();
     long c1 = encoderCount1;
@@ -152,21 +149,20 @@ void loop() {
 // =========================================================
 
 void updateTilt() {
-
   
   float ax, ay, az;
   float gx, gy, gz;
   float accAngle;
 
-  const float k = 0.9;
-
-  //Time difference
-  unsigned long currentTime = micros();
-  dt = (currentTime - prevTime) / 1000000.0;
-  prevTime = currentTime;
+  const float k = 0.98;
 
   if (IMU.accelerationAvailable() && IMU.gyroscopeAvailable()){
     
+    //Time difference
+    unsigned long currentTime = micros();
+    dt = (currentTime - prevTime) / 1000000.0;
+    prevTime = currentTime;
+
     // Accelerometer Angle 
     IMU.readAcceleration(ax, ay, az);
     accAngle = atan2 (ay, az) * 180/PI; 
@@ -192,8 +188,7 @@ void updateTilt() {
     }
     else{
       filterAngle = k*gyroAngle + (1-k)*accAngle;
-    }
-    
+    } 
   }
 }
 
@@ -244,7 +239,6 @@ void driveMotors(int pwm) {
   }
 }
 
-
 void updateEncoder1() {
 
     static int lastA = 0;
@@ -287,18 +281,29 @@ void updateEncoder2() {
     lastB = B;
 }
 
-
 float MotorController(float error, float dt){ // takes tilt angle (error), calculates error based on type of control, outputs pwm 
+  
+  if (fabs(error) < 0.3)  //could change the deadband or remove it entirely
+    error = 0;
+
+  if (dt <= 0 || dt > 0.1)  //so that the dt does not explode if it is tiny
+    return 0;
+
   // proportional part 
   float P = Kp * error; // or should we do int? 
+
   // derivative part, need current error and prevError  
   float derror = (error - prevError)/dt;
   float D = Kd * derror; 
   prevError = error; 
-  // inegral part 
-  integral = integral + dt*error; 
+  // float D = Kd * (-gx);  // could try this equation
+  // integral part 
+
+  integral = integral + dt * error; 
+  integral = constrain(integral, -50, 50);
   float I = integral * Ki; 
-  float PID = (P + I + D); // change gain later 
+  float PID = (P + I + D); // change gain later
+  PID = constrain(PID, -255, 255);
 
   return PID; 
 }
