@@ -50,13 +50,14 @@ float filterAngle;
 
 // ================= CONTROL =================
 
-float Kp = 14.3; //could try to increase and decrease if this does not work well
+float Kp = 13; //could try to increase and decrease if this does not work well
 float Kd = 1.5; // differential constant 
-float Ki = 9.0; // integral constant 
+float Ki = 9; // integral constant 
 float prevError = 0; // for D
 float dt = 0; 
 float integral = 0; 
 float desiredAngle = 0;
+float filteredDerror = 0; // 
 
 // measured deadbands
 const int DEAD_A = 46;
@@ -97,7 +98,7 @@ void setup() {
     while (1);
   }
 
-  Serial.println("System Ready");
+  //Serial.println("System Ready");
 }
 
 // =========================================================
@@ -121,7 +122,7 @@ driveMotors(pwm);
   // -------- RPM every 100 milli seconds = 0.1 seconds --------
   unsigned long now = micros();
 
-  if (now - prevRPMTime >= 100) {
+  if (now - prevRPMTime >= 1z0) {
 
     noInterrupts();
     long c1 = encoderCount1;
@@ -161,7 +162,7 @@ void updateTilt() {
   float gx, gy, gz;
   float accAngle;
 
-  const float k = 0.98;
+  const float k = 0.99;
 
 
   if (IMU.accelerationAvailable() && IMU.gyroscopeAvailable()){
@@ -286,10 +287,19 @@ void updateEncoder2() {
 
 float MotorController(float error, float dt){ // takes tilt angle (error), calculates error based on type of control, outputs pwm 
   // proportional part 
+  if (abs(error) < 0.2){error = 0; prevError = 0;} //protection against small errors 
+
+
   float P = Kp * error; // or should we do int? 
   // derivative part, need current error and prevError  
+  if (dt <= 0.0001) dt = 0.0001; //protection against very small dt
+  float alpha = 0.1; // tune this (lower = more smoothing)
+  
   float derror = (error - prevError)/dt;
-  float D = Kd* derror; 
+  filteredDerror = alpha * derror + (1 - alpha) * filteredDerror;
+  float D = Kd * filteredDerror;
+  
+  //float D = Kd* derror; 
   prevError = error; 
   // inegral part 
   integral = integral + dt*error; 
@@ -297,9 +307,9 @@ float MotorController(float error, float dt){ // takes tilt angle (error), calcu
   float I = integral * Ki;
 
   float PID = (P + I + D); // change gain later 
-  Serial.print(P);
-  Serial.print("   "); Serial.print(I);
-  Serial.print("   "); Serial.println(D);
+  //Serial.print(P);
+  //Serial.print("   "); Serial.print(I);
+  //Serial.print("   "); Serial.println(D);
 
   return PID; 
 }
