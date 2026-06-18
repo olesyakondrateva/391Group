@@ -1,0 +1,915 @@
+#include <ArduinoBLE.h>
+#include "Arduino_BMI270_BMM150.h"
+
+#define BUFFER_SIZE 20
+
+
+// =========================================================
+// BLE STUFF
+// =========================================================
+
+// Define a custom BLE service and characteristic
+char currentCommand[BUFFER_SIZE + 1] = "BALANCE"; // tracks active state
+char previousCommand[BUFFER_SIZE + 1] = "";
+bool firstCommandLoop = false;
+
+BLEService customService(
+    "00000000-5EC4-4083-81CD-A10B8D5CF6EC"
+);
+
+BLECharacteristic customCharacteristic(
+    "00000001-5EC4-4083-81CD-A10B8D5CF6EC",
+    BLERead | BLEWrite | BLENotify,
+    BUFFER_SIZE,
+    false
+);
+
+
+// =========================================================
+// MOTOR PINS
+// =========================================================
+
+const int A_IN1 = 2;
+const int A_IN2 = 3;
+
+const int B_IN1 = 5;
+const int B_IN2 = 6;
+
+
+// =========================================================
+// ENCODER PINS
+// =========================================================
+
+const int encoderA1 = 7;
+const int encoderB1 = 8;
+
+const int encoderA2 = 9;
+const int encoderB2 = 10;
+
+
+// =========================================================
+// ENCODER VARIABLES
+// =========================================================
+
+volatile long encoderCount1 = 0;
+volatile long encoderCount2 = 0;
+
+long count1 = 0;
+long count2 = 0;
+
+
+// =========================================================
+// TURNING FSM
+// =========================================================
+
+bool turning = false;
+bool testTurnStarted = false; // for testing without BLE 
+
+// Use two flags for first 45 degrees and then second 45 degree turn
+bool firstTurnStarted = false; 
+bool secondTurnStarted = false;
+bool firstTurnDone = false; 
+bool secondTurnDone = false;   
+
+long turnTarget = 0;
+int turnDirection = 0;
+int turnPWM = 0;
+
+float countsPerDegree = 12.5;
+
+
+// =========================================================
+// IMU VARIABLES
+// =========================================================
+
+unsigned long prevTime = 0;
+
+bool firstRun = true;
+
+float gyroAngle;
+float filterAngle;
+float gx_d;
+float dt = 0;
+
+
+// =========================================================
+// PID VARIABLES
+// =========================================================
+
+float Kp = 12.5;
+float Kd = 0.75;
+float Ki = 150.0;
+
+float integral = 0;
+float prevError = 0;
+
+float desiredAngle = 0;
+float offset = 0;
+
+bool flag1 = true;
+bool flag2 = true;
+bool flag3 = true;
+bool flag4 = true;
+bool flag5 = true;
+bool flag6 = true;
+
+//=========================================================
+// TURNING STATES 
+// ========================================================
+
+enum TestingStates {
+    START,
+    BLOCKING_BALANCE,
+    FIRST_TURN,
+    SECOND_TURN,
+    FINISHED
+};
+
+TestingStates state = START;
+
+
+//=========================================================
+// FORWARD AND BACKWARD MOVEMENT 
+// ========================================================
+bool firstFwd = true;
+float prevErrorF = 0;
+
+bool firstBck = true;
+float prevErrorB = 0;
+
+float integralF = 0;
+float integralB = 0;
+
+
+// =========================================================
+// MOTOR VARIABLES
+// =========================================================
+
+const int DEAD_A = 46;
+const int DEAD_B = 51;
+
+const int MAX_PWM = 255;
+
+int pwm = 0;
+
+
+// =========================================================
+// SETUP
+// =========================================================
+
+void setup() {
+
+    pinMode(LED_BUILTIN, OUTPUT);
+
+
+    // ---------------- BLE ----------------
+
+    if (!BLE.begin()) {
+        while (1);
+    }
+
+    BLE.setLocalName("BLE-DEVICE");
+    BLE.setDeviceName("BLE-DEVICE");
+
+    customService.addCharacteristic(customCharacteristic);
+
+    BLE.addService(customService);
+
+    customCharacteristic.writeValue("Waiting for data");
+
+    BLE.advertise();
+
+
+    // ---------------- Motors ----------------
+
+    pinMode(A_IN1, OUTPUT);
+    pinMode(A_IN2, OUTPUT);
+
+    pinMode(B_IN1, OUTPUT);
+    pinMode(B_IN2, OUTPUT);
+
+
+    // ---------------- Encoders ----------------
+
+    pinMode(encoderA1, INPUT_PULLUP);
+    pinMode(encoderB1, INPUT_PULLUP);
+
+    pinMode(encoderA2, INPUT_PULLUP);
+    pinMode(encoderB2, INPUT_PULLUP);
+
+
+    attachInterrupt(
+        digitalPinToInterrupt(encoderA1),
+        updateEncoder1,
+        CHANGE
+    );
+
+    attachInterrupt(
+        digitalPinToInterrupt(encoderB1),
+        updateEncoder1,
+        CHANGE
+    );
+
+    attachInterrupt(
+        digitalPinToInterrupt(encoderA2),
+        updateEncoder2,
+        CHANGE
+    );
+
+    attachInterrupt(
+        digitalPinToInterrupt(encoderB2),
+        updateEncoder2,
+        CHANGE
+    );
+
+
+    // ---------------- IMU ----------------
+
+    Wire.setClock(400000);
+    Wire1.setClock(400000);
+
+    if (!IMU.begin()) {
+        while (1);
+    }
+}
+
+
+// =========================================================
+// HELPER FUNCTIONS
+// =========================================================
+
+
+// Reset both encoder counts safely
+void resetEncoders() {
+
+    noInterrupts();
+
+    encoderCount1 = 0;
+    encoderCount2 = 0;
+
+    count1 = 0;
+    count2 = 0;
+
+    interrupts();
+}
+
+
+// Read encoder counts safely
+void updateEncoderSnapshot() {
+
+    noInterrupts();
+    count1 = encoderCount1;
+    count2 = encoderCount2;
+    interrupts();
+}
+
+
+// Convert encoder drift into a balancing offset
+float getPositionOffset() {
+
+    float posError = (count1 + count2) / 2.0;
+
+    posError = constrain(posError, -100, 100);
+
+    return 0.01 * posError;
+}
+
+
+// =========================================================
+// MAIN LOOP
+// =========================================================
+
+
+void loop() {
+
+    updateTilt();
+    handleBLE();
+    processCommand();
+}
+
+
+// =========================================================
+// BLE FUNCTIONS
+// =========================================================
+
+void handleBLE() {
+
+    BLEDevice central = BLE.central();
+
+    if (central) {
+
+        digitalWrite(LED_BUILTIN, HIGH);
+
+        while (central.connected()) {
+
+            updateTilt();
+
+            readBLECommand();
+
+            processCommand();
+        }
+
+        digitalWrite(LED_BUILTIN, LOW);
+    }
+}
+
+
+void readBLECommand() {
+
+    if (!customCharacteristic.written()) {
+        return;
+    }
+
+    int length = customCharacteristic.valueLength();
+
+    const unsigned char* receivedData =
+        customCharacteristic.value();
+
+    char receivedString[length + 1];
+
+    memcpy(receivedString, receivedData, length);
+
+    receivedString[length] = '\0';
+
+    customCharacteristic.writeValue("Data received");
+
+    strncpy(currentCommand, receivedString, BUFFER_SIZE);
+
+    currentCommand[BUFFER_SIZE] = '\0';
+
+
+    // Check if this is a new command
+    if (strcmp(currentCommand, previousCommand) != 0) {
+
+        firstCommandLoop = true;
+
+        strncpy(
+            previousCommand,
+            currentCommand,
+            BUFFER_SIZE
+        );
+
+        previousCommand[BUFFER_SIZE] = '\0';
+    }
+}
+
+
+// =========================================================
+// COMMAND HANDLER
+// =========================================================
+
+void processCommand() {
+
+    // Reset encoder once when a new command arrives
+    if (firstCommandLoop) {
+        resetEncoders();
+    }
+    // ---------------- FORWARD ----------------
+
+    if (strcmp(currentCommand, "FORWARD") == 0) {
+        // keep fwd - 50 cm
+        updateTilt();
+        float posOffset = 0;
+        float target = -3850;
+
+        if (firstFwd){
+          integral = 0;
+          firstFwd = false;
+          prevErrorF = 0;
+          resetEncoders();
+        }
+
+        updateEncoderSnapshot();
+
+        // Tune these
+        float Kp_pos = 0.001;   // start here, adjust for speed
+        float Kd_pos = 5;   // start small, increase if overshoot
+        float Ki_pos = 0.000025;
+
+        float position = (count1 + count2) / 2.0f;
+        float FWDerror = target - position;
+        float fError = FWDerror - prevErrorF;
+
+        integralF = integralF + FWDerror*dt;
+        
+        float fwdOffset = -1*((Kp_pos * FWDerror) + (Kd_pos * fError*dt) +(Ki_pos*integralF));
+        prevErrorF = FWDerror;
+
+        fwdOffset = constrain(fwdOffset, -0.75, 0.75);
+
+        if (position<-3820) digitalWrite(12, HIGH);
+        pwm = (int)MotorController(desiredAngle - filterAngle + offset + posOffset + fwdOffset, dt);
+        driveMotors(pwm, pwm);
+    }
+
+    // ---------------- REVERSE ----------------
+
+    else if (strcmp(currentCommand, "REVERSE") == 0) {
+        updateTilt();
+        float posOffset = 0;
+        float target = 3850;
+
+        if (firstBck){
+          integral = 0;
+          digitalWrite(12, LOW);
+          firstBck = false;
+          prevErrorB = 0;
+          resetEncoders();
+        }
+
+        updateEncoderSnapshot();
+
+        // Tune these
+        float Kp_pos = 0.001;   // start here, adjust for speed
+        float Kd_pos = 5;   // start small, increase if overshoot
+        float Ki_pos = 0.000025;
+
+
+        float position = (count1 + count2) / 2.0f;
+        float BCKerror = target - position;
+        float bError = BCKerror - prevErrorB;
+
+        integralB = integralB + BCKerror*dt;
+
+        float bckOffset = -1*((Kp_pos * BCKerror) + (Kd_pos * bError*dt)+(Ki_pos*integralB*dt));
+        prevErrorB = BCKerror;
+
+        bckOffset = constrain(bckOffset, -0.75, 0.75);
+
+        if (position>3820) digitalWrite(12, HIGH);
+        pwm = (int)MotorController(desiredAngle - filterAngle + offset + posOffset + bckOffset, dt);
+        driveMotors(pwm, pwm);
+    }
+
+    // ---------------- LEFT ----------------
+
+    else if (strcmp(currentCommand, "LEFT") == 0) {
+        runBalanceAndTurn(0.5);
+        switch(state) {
+        case START:
+            startTurn(48.0, 50);
+            state = FIRST_TURN;
+            break;
+
+        case BLOCKING_BALANCE: 
+            blockingBalance(3);
+            startTurn(56.0, 50);
+            state = SECOND_TURN;
+        break;
+
+        case FIRST_TURN:
+            updateTurn();
+            if (!turning) {
+                //startTurn(45.0, 50);
+                //countsPerDegree = 12.0;
+                state = BLOCKING_BALANCE;
+            }
+            break;
+
+        case SECOND_TURN:
+            updateTurn();
+            if (!turning) {
+                state = FINISHED;
+            }
+            break;
+
+        case FINISHED:
+            runBalanceAndTurn(0.5);
+            strcpy(currentCommand, "BALANCE");
+            break;
+         }
+      }
+    // ---------------- RIGHT ----------------
+
+    else if (strcmp(currentCommand, "RIGHT") == 0) {
+        runBalanceAndTurn(0.5);
+        switch(state) {
+        case START:
+            startTurn(-45.0, 50);
+            state = FIRST_TURN;
+            break;
+
+        case BLOCKING_BALANCE: 
+            blockingBalance(3);
+            startTurn(-47.0, 50);
+            state = SECOND_TURN;
+        break;
+
+        case FIRST_TURN:
+            updateTurn();
+
+            if (!turning) {
+              countsPerDegree = 14.5;
+              state = BLOCKING_BALANCE;
+            }
+        break;
+
+        case SECOND_TURN:
+            updateTurn();
+            if (!turning) {
+                //startTurn(-45.0, 50);
+                state = FINISHED;
+            }
+        break;
+
+        case FINISHED:
+            runBalanceAndTurn(0.5);
+            strcpy(currentCommand, "BALANCE");
+            break;
+         }
+    }
+
+    // ---------------- STOP ----------------
+
+    else if (strcmp(currentCommand, "STOP") == 0) {
+        driveMotors(0,0);
+    }
+    // ---------------- BALANCE ----------------
+    else if (strcmp(currentCommand, "BALANCE") == 0){
+        offset = 0.5;
+        runBalanceAndTurn(offset);
+        state = START;
+    }
+
+    // Clear first loop flag
+    firstCommandLoop = false;
+}
+
+
+// =========================================================
+// TURNING FSM
+// =========================================================
+
+
+void startTurn(float degrees, int pwmCommand) {
+
+    resetEncoders();
+    turnTarget = abs(degrees) * countsPerDegree;
+    turnDirection = (degrees > 0) ? 1 : -1;
+    turnPWM = abs(pwmCommand);
+    turning = true;
+}
+
+
+void updateTurn() {
+
+    if (!turning) {
+        return;
+    }
+
+    long counts =
+        (abs(encoderCount1) +
+         abs(encoderCount2)) / 2;
+
+    if (counts >= turnTarget) {
+        turning = false;
+        resetEncoders();
+    }
+}
+
+// =========================================================
+// IMU UPDATE
+// =========================================================
+
+void updateTilt() {
+
+    float ax, ay, az;
+    float gx, gy, gz;
+    float accAngle;
+
+    const float k = 0.99;
+
+
+    if (IMU.accelerationAvailable() &&
+        IMU.gyroscopeAvailable()) {
+
+        unsigned long currentTime = micros();
+
+        dt = (currentTime - prevTime) / 1000000.0;
+
+        prevTime = currentTime;
+
+
+        // Accelerometer angle
+        IMU.readAcceleration(ax, ay, az);
+
+        accAngle = atan2(ay, az) * 180 / PI;
+
+
+        // Gyroscope
+        IMU.readGyroscope(gx, gy, gz);
+
+        gx_d = gx;
+
+
+        if (firstRun) {
+
+            gyroAngle =
+                accAngle + (-gx) * dt;
+
+            filterAngle =
+                k * gyroAngle +
+                (1 - k) * accAngle;
+
+            firstRun = false;
+        }
+
+        else {
+
+            gyroAngle =
+                filterAngle + (-gx) * dt;
+
+            filterAngle =
+                k * gyroAngle +
+                (1 - k) * accAngle;
+        }
+    }
+}
+
+
+// =========================================================
+// BALANCE PID CONTROLLER
+// =========================================================
+
+float MotorController(float error, float dt) {
+
+    float P = Kp * error;
+
+    // Using gyro as derivative term
+    float D = Kd * gx_d;
+
+    // Integral term
+    integral += error * dt;
+
+    integral = constrain(integral, -150, 150);
+
+    // Initial startup reset
+    if (micros() < 5500000) {
+        integral = 0;
+    }
+
+
+    // Setting integral to zero every 5 seconds 
+    if (micros() > 10000000 && flag1) {
+        integral = 0;
+        flag1 = false;
+    }
+
+    if (micros() > 15000000 && flag2) {
+        integral = 0;
+        flag2 = false;
+    }
+
+    if (micros() > 20000000 && flag3) {
+        integral = 0;
+        flag3 = false;
+    }
+
+    if (micros() > 25000000 && flag4) {
+        integral = 0;
+        flag4 = false;
+    }
+
+    if (micros() > 30000000 && flag5) {
+        integral = 0;
+        flag5 = false;
+    }
+
+    if (micros() > 35000000 && flag6) {
+        integral = 0;
+        flag6 = false;
+    }
+
+
+    float I = Ki * integral;
+
+
+    float PID = P + I + D;
+
+
+    // Delay motor startup
+    if (micros() < 5000000) {
+        return 0;
+    }
+
+    return PID;
+}
+
+
+// =========================================================
+// COMBINED BALANCE + TURN CONTROL
+// =========================================================
+
+void runBalanceAndTurn(float balanceOffset) {
+
+    // Check whether the turn is finished
+    updateTurn();
+    // Get encoder position for drift correction
+    updateEncoderSnapshot();
+    float positionOffset = getPositionOffset();
+
+    // Normal balancing output
+    int balancePWM = (int)MotorController(
+        desiredAngle
+        - filterAngle
+        + balanceOffset
+        + positionOffset,
+        dt
+    );
+
+    // Start with identical motor commands
+    int leftPWM = balancePWM;
+    int rightPWM = balancePWM;
+   
+   if (turning){
+    long counts = (abs(encoderCount1) + abs(encoderCount2)) / 2;
+    float turn_error = turnTarget - counts;
+    // Scale from 1.0 (start) to 0.0 (finish)
+    float scale = turn_error / turnTarget;
+    // keep the motors from stalling near the end
+    scale = constrain(scale, 0.3, 1.0);
+    int turnCommand = turnDirection * turnPWM * scale;
+    leftPWM += turnCommand;
+    rightPWM -= turnCommand;
+  }
+
+  driveMotors(leftPWM, rightPWM);
+}
+
+// =========================================================
+// MOTOR CONTROL 
+// =========================================================
+
+void driveMotors(int leftPWM, int rightPWM) {
+
+    // Apply deadband compensation
+
+    if (leftPWM > 10) {
+        leftPWM += DEAD_A;
+    }
+    else if (leftPWM < -10) {
+        leftPWM -= DEAD_A;
+    }
+
+
+    if (rightPWM > 10) {
+        rightPWM += DEAD_B;
+    }
+    else if (rightPWM < -10) {
+        rightPWM -= DEAD_B;
+    }
+
+
+    // Encoder-based yaw correction
+    // Positive error means one wheel is ahead of the other
+    if (!turning) {
+    float yawError = count1 - count2;
+    float K_yaw = 0.25;
+
+    leftPWM -= K_yaw * yawError;
+    rightPWM += K_yaw * yawError;
+    }
+
+
+    // Limit motor commands
+    leftPWM = constrain(leftPWM, -MAX_PWM, MAX_PWM);
+    rightPWM = constrain(rightPWM, -MAX_PWM, MAX_PWM);
+
+
+    // ---------------- Motor A ----------------
+
+    if (leftPWM > 0) {
+
+        analogWrite(A_IN1, leftPWM);
+        analogWrite(A_IN2, 0);
+
+    }
+    else if (leftPWM < 0) {
+
+        analogWrite(A_IN1, 0);
+        analogWrite(A_IN2, -leftPWM);
+
+    }
+    else {
+
+        analogWrite(A_IN1, 0);
+        analogWrite(A_IN2, 0);
+    }
+
+
+    // ---------------- Motor B ----------------
+
+    if (rightPWM > 0) {
+
+        analogWrite(B_IN1, rightPWM);
+        analogWrite(B_IN2, 0);
+
+    }
+    else if (rightPWM < 0) {
+
+        analogWrite(B_IN1, 0);
+        analogWrite(B_IN2, -rightPWM);
+
+    }
+    else {
+
+        analogWrite(B_IN1, 0);
+        analogWrite(B_IN2, 0);
+    }
+}
+
+
+// =========================================================
+// ENCODER 1 INTERRUPT
+// =========================================================
+
+void updateEncoder1() {
+
+    static int lastA = 0;
+
+    int A = digitalRead(encoderA1);
+    int B = digitalRead(encoderB1);
+
+
+    if (A != lastA) {
+
+        if (A == B) {
+            encoderCount1++;
+        }
+        else {
+            encoderCount1--;
+        }
+
+    }
+    else {
+
+        if (A != B) {
+            encoderCount1++;
+        }
+        else {
+            encoderCount1--;
+        }
+    }
+
+    lastA = A;
+}
+
+// =========================================================
+// ENCODER 2 INTERRUPT
+// =========================================================
+
+void updateEncoder2() {
+
+    static int lastA = 0;
+
+    int A = digitalRead(encoderA2);
+    int B = digitalRead(encoderB2);
+
+
+    if (A != lastA) {
+
+        if (A == B) {
+            encoderCount2++;
+        }
+    else {
+            encoderCount2--;
+        }
+
+    }
+    else {
+
+        if (A != B) {
+            encoderCount2++;
+        }
+        else {
+            encoderCount2--;
+        }
+    }
+
+
+    lastA = A;
+}
+
+
+// ==========================================================
+// BLOCKING BALANCE FOR TURNING 
+// ==========================================================
+// might not use this, lets see if it works 
+
+void blockingBalance(int durationSeconds) {
+  unsigned long startTime = micros();
+  unsigned long durationUs = (unsigned long)durationSeconds * 1000000UL;
+
+  resetEncoders();
+  integral = 0;      // optional but recommended
+  
+  while (micros() - startTime < durationUs) {
+    updateTilt();
+
+    offset = 0.50;
+    updateEncoderSnapshot();
+    runBalanceAndTurn(offset);
+  }
+
+  //driveMotors(0); // stop after timed balance
+}
