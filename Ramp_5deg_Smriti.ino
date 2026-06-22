@@ -179,7 +179,7 @@ void loop() {
 
   float posError = (count1+count2)/2;
   posError = constrain (posError, -100, 100);
-  float posOffset = 0.01*posError;
+  float posOffset = 0.01 * posError;
 
   /*
   if (micros() > 6000000 && flag_ramp_start) 
@@ -199,12 +199,6 @@ void loop() {
 
       k = 0.2; // works at 11V
       if (fabs(desiredAngle - target) < 4) k = 0.075;
-
-      /* 
-      if (wheelSpeed < 150) {   //tune this threshold
-        k = 0.2;
-      }
-      */
 
       if (desiredAngle < target) {
       desiredAngle += (target - desiredAngle) * k * dt;
