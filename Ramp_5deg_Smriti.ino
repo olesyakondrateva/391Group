@@ -174,21 +174,11 @@ void loop() {
   count2 = encoderCount2;
   interrupts();
 
-  //if (count1 > 100 || count2 > 100) offset = 0.9;  // angle offset positive 
-  //if (count1 < -100 || count2 < -100) offset = 0.1; //angle offset negative
-
   float posError = (count1+count2)/2;
   posError = constrain (posError, -100, 100);
   float posOffset = 0.01 * posError;
 
-  /*
-  if (micros() > 6000000 && flag_ramp_start) 
-    { 
-      integral = 0; flag_ramp_start = false; 
-      }
-  */
-
-  //RAMP YAYAY
+  //RAMP
   float k;
   //float wheelSpeed;
 
@@ -234,31 +224,6 @@ void loop() {
     // posOffset active, but clamp it so it can't push angle positive
     posOffset = constrain(posOffset, -0.3, 0.3);
     }
-
-  /*else if (micros() > 50000000) {
-    digitalWrite(LED_BUILTIN, LOW);
-
-    if (flag_descent) {
-        integral = 0;
-        encoderCount1 = 0;
-        encoderCount2 = 0;
-        stopPosition = 0;
-        flag_descent = false;
-        rampDone = false;
-        desiredAngle = 0; // immediately kill forward lean
-    }
-
-    // Use encoder position error to hold in place
-    long currentPos = (count1 + count2) / 2;
-    float posError = (float)(currentPos - stopPosition);
-    
-    // This directly adjusts the balance point to fight drift
-    float posCorrection = 0.015 * posError; // tune this gain
-    posCorrection = constrain(posCorrection, -2.0, 2.0); // allow both directions
-
-    offset = 0.50; // back to neutral balance offset
-  }
-  */
 
   pwm = (int)MotorController(desiredAngle - filterAngle + offset + posOffset, dt);
         //Serial.println(pwm);
