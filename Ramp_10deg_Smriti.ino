@@ -248,7 +248,7 @@ void loop() {
 
     if (fabs(desiredAngle - target_down) > 0.05) {
         desiredAngle += (target_down - desiredAngle) * k_down * dt;
-        desiredAngle = constrain(desiredAngle, -2.0, target_10);
+        desiredAngle = constrain(desiredAngle, -1.0, target_10);
     } else {
         desiredAngle = 0;
 
