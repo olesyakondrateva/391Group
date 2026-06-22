@@ -200,12 +200,6 @@ void loop() {
       k = 0.2; // works at 11V
       if (fabs(desiredAngle - target_5) < 4) k = 0.05;
 
-      /* 
-      if (wheelSpeed < 150) {   //tune this threshold
-        k = 0.2;
-      }
-      */
-
       if (desiredAngle < target_5) {
       desiredAngle += (target_5 - desiredAngle) * k * dt;
       desiredAngle = constrain(desiredAngle, 0, target_5);  // don't overshoot
@@ -220,12 +214,6 @@ void loop() {
       k = 0.15; // works at 11V
       if (fabs(desiredAngle - target_10) < 8) k = 0.05;
 
-      /* 
-      if (wheelSpeed < 150) {   //tune this threshold
-        k = 0.2;
-      }
-      */
-
       if (desiredAngle < target_10) {
       desiredAngle += (target_10 - desiredAngle) * k * dt;
       desiredAngle = constrain(desiredAngle, 0, target_10);  // don't overshoot
@@ -238,28 +226,7 @@ void loop() {
       posOffset = 0;
 
       k = 0.2; // works at 11V
-      if (fabs(desiredAngle - target_15) < 1) k = 0.05;
-
-      /* 
-      if (wheelSpeed < 150) {   //tune this threshold
-        k = 0.2;
-      }
-      */
-
-      /*Encoder values:
-      
-      5 degrees:
-      before ramp: 3900
-      after ramp: 5000
-
-      10 degrees line:
-      before: 7500 
-      after: 
-
-      just above 10 degrees ramp: 7500
-
-      */
-
+      if (fabs(desiredAngle - target_15) < 12.5) k = 0.05;
 
       if (desiredAngle < target_15) {
       desiredAngle += (target_15 - desiredAngle) * k * dt;
